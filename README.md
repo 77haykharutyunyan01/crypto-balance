@@ -1,59 +1,58 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# crypto-balance
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Тестовое задание: модуль зачисления и списания крипто-баланса пользователя с учётом рисков (PHP, Laravel).
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Запуск
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate
+php artisan db:seed
+```
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+Сидер создаёт двух пользователей (`test@example.com`, `test2@example.com`) — их `id` подставляй в URL при запросах к API (например `/api/users/1/deposit`).
 
-## Learning Laravel
+---
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+## API
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+| Метод | URL | Body (JSON) |
+|-------|-----|-------------|
+| POST | `/api/users/{id}/deposit` | `{"currency": "BTC", "amount": 0.5, "risk_level": "normal"}` или `"high"` |
+| POST | `/api/users/{id}/withdraw` | `{"currency": "BTC", "amount": 0.1}` |
+| POST | `/api/transactions/{id}/confirm` | `{}` |
+| POST | `/api/transactions/{id}/fail` | `{}` |
 
-## Laravel Sponsors
+В ответе приходят `transaction` и текущий `account` (available/locked).
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+---
 
-### Premium Partners
+## Тесты
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+```bash
+php artisan test
+```
 
-## Contributing
+В `tests/Feature/CryptoBalanceTest.php` проверяются: обычный депозит, high-risk депозит и confirm, списание при нехватке баланса, high-risk вывод и fail (возврат средств).
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+---
 
-## Code of Conduct
+## Структура
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+- **Таблицы:** `crypto_accounts` (баланс по user + валюта: available + locked), `crypto_transactions` (история операций, статус, risk_level).
+- **Сервис:** `App\Services\CryptoBalanceService` — deposit, withdraw, confirmTransaction, failTransaction. Всё в транзакциях БД с блокировкой счёта (`lockForUpdate`).
+- **Риски:** при `risk_level: high` сумма идёт в locked и ждёт confirm/fail; при confirm — перевод в available (депозит) или списание из locked (вывод); при fail — отмена и при выводе возврат в available.
 
-## Security Vulnerabilities
+---
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Что сделано и зачем
 
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+1. **Два баланса (available / locked)** — чтобы рискованные операции не сразу меняли доступные средства; после подтверждения в блокчейне вызывается confirm, при ошибке — fail.
+2. **Транзакции БД + lockForUpdate** — чтобы при одновременных запросах не было гонок и двойного списания.
+3. **Проверка баланса при списании** — при нехватке available выбрасывается исключение, списание не выполняется.
+4. **Запись каждой операции в `crypto_transactions`** — аудит, тип (deposit/withdrawal), направление (credit/debit), статус (pending/completed/failed).
+5. **Тесты** — сценарии из задани
